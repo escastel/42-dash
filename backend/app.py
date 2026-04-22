@@ -3,8 +3,10 @@ import json
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+
+from normalize_data import find_game_by_id, normalize_all_games, query_games
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -38,11 +40,12 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.state.games_raw: dict[str, Any] = {
+    app.state.games_raw = {
         "alpha": [],
         "beta": [],
         "gamma": [],
     }
+    app.state.games = []
     app.state.launch_secret = os.getenv("LAUNCH_SECRET", "default-secret-change-me")
 
     @app.on_event("startup")
@@ -62,24 +65,43 @@ def create_app() -> FastAPI:
             except json.JSONDecodeError:
                 app.state.games_raw[label] = []
 
+        app.state.games = normalize_all_games(app.state.games_raw)
+
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.get("/api/games")
-    def list_games() -> dict[str, Any]:
-        return {
-            "data": [],
-            "meta": {
-                "total": 0,
-                "page": 1,
-                "pageSize": 20,
-                "totalPages": 0
-            }
-        }
+    def list_games(
+        search: str | None = Query(default=None),
+        name: str | None = Query(default=None),
+        provider: str | None = Query(default=None),
+        category: str | None = Query(default=None),
+        enabled: str | None = Query(default=None),
+        sort: str = Query(default="name"),
+        order: str = Query(default="asc"),
+        page: int = Query(default=1, ge=1),
+        pageSize: int = Query(default=20, ge=1),
+    ) -> dict[str, Any]:
+        return query_games(
+            app.state.games,
+            search=search,
+            name=name,
+            provider=provider,
+            category=category,
+            enabled=enabled,
+            sort=sort,
+            order=order,
+            page=page,
+            page_size=pageSize,
+        )
 
     @app.get("/api/games/{game_id}")
     def get_game(game_id: str) -> dict[str, Any]:
+        game = find_game_by_id(app.state.games, game_id)
+        if game is not None:
+            return game
+
         return {
             "id": game_id,
             "message": "pending implementation",
@@ -93,11 +115,13 @@ def create_app() -> FastAPI:
         }
 
     app.state.wallet_balance = float(os.getenv("INITIAL_BALANCE", "10000"))
+
     @app.get("/api/wallet/balance")
     def get_wallet_balance() -> dict[str, float]:
         return {
             "balance": round(float(app.state.wallet_balance), 2),
         }
+
     return app
 
 
