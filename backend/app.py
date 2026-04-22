@@ -66,17 +66,16 @@ def create_app() -> FastAPI:
     def healthz() -> dict[str, str]:
         return {"status": "ok"}
 
-    # Endpoints base del reto (stubs) para no romper contrato de rutas
     @app.get("/api/games")
     def list_games() -> dict[str, Any]:
         return {
-            "items": [],
+            "data": [],
             "meta": {
                 "total": 0,
                 "page": 1,
                 "pageSize": 20,
-                "totalPages": 0,
-            },
+                "totalPages": 0
+            }
         }
 
     @app.get("/api/games/{game_id}")
@@ -93,6 +92,12 @@ def create_app() -> FastAPI:
             "received": payload,
         }
 
+    app.state.wallet_balance = float(os.getenv("INITIAL_BALANCE", "10000"))
+    @app.get("/api/wallet/balance")
+    def get_wallet_balance() -> dict[str, float]:
+        return {
+            "balance": round(float(app.state.wallet_balance), 2),
+        }
     return app
 
 
