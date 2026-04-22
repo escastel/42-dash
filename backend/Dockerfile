@@ -1,13 +1,18 @@
-FROM alpine:3.21
+FROM python:3.12-slim
 
-COPY backend /usr/local/bin/backend
-COPY data/ /data/
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV BACKEND_PORT=3000
+ENV DATA_FILES=/app/data/provider-alpha.json,/app/data/provider-beta.json,/app/data/provider-gamma.json
 
-RUN chmod +x /usr/local/bin/backend
+WORKDIR /app
 
-WORKDIR /data
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY app.py /app/app.py
+COPY data/ /app/data/
+
 EXPOSE 3000
 
-ENV BACKEND_PORT=3000
-
-ENTRYPOINT ["sh", "-c", "backend --port ${BACKEND_PORT} --data /data/provider-alpha.json,/data/provider-beta.json,/data/provider-gamma.json"]
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${BACKEND_PORT}"]
