@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app.py /app/app.py
 COPY normalize_data.py /app/normalize_data.py
+COPY wallet_service.py /app/wallet_service.py
 COPY data/ /app/data/
 
 EXPOSE 3000
