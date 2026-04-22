@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from datetime import datetime
 
 
 CATEGORY_MAP_BETA = {
@@ -10,6 +11,40 @@ CATEGORY_MAP_BETA = {
 	"IN": "instant",
 	"JP": "jackpot",
 }
+
+VOLATILITY_MAP_BETA = {
+	"LOW": "low",
+	"MED": "medium",
+	"HIGH": "high",
+}
+
+
+def _get(item: dict[str, Any], *keys: str, default: Any = "") -> Any:
+	for key in keys:
+		if key in item:
+			return item.get(key)
+	return default
+
+
+def normalize_date_iso(value: str) -> str:
+	# Keeps only the date portion for canonical `releasedAt` (YYYY-MM-DD).
+	if not value:
+		return ""
+	value = value.strip()
+	try:
+		return datetime.fromisoformat(value.replace("Z", "+00:00")).date().isoformat()
+	except ValueError:
+		return value.split("T", 1)[0]
+
+
+def normalize_date_ddmmyyyy(value: str) -> str:
+	if not value:
+		return ""
+	value = value.strip()
+	try:
+		return datetime.strptime(value, "%d/%m/%Y").date().isoformat()
+	except ValueError:
+		return value
 
 
 def parse_bool(value: str | None, default: bool = True) -> bool:
@@ -25,40 +60,41 @@ def parse_bool(value: str | None, default: bool = True) -> bool:
 
 
 def normalize_alpha(item: dict[str, Any]) -> dict[str, Any]:
-	tags = item.get("features", [])
+	tags = _get(item, "features", default=[])
 	if not isinstance(tags, list):
 		tags = []
 
 	return {
-		"id": str(item.get("gameId", "")),
-		"name": str(item.get("title", "")),
-		"provider": str(item.get("studio", "")),
-		"category": str(item.get("type", "")).lower(),
-		"rtp": float(item.get("returnToPlayer", 0.0)),
-		"volatility": str(item.get("variance", "")).lower(),
-		"enabled": bool(item.get("active", False)),
-		"releasedAt": str(item.get("launchDate", "")),
+		"id": str(_get(item, "gameId", "game_id", default="")),
+		"name": str(_get(item, "title", default="")),
+		"provider": str(_get(item, "studio", default="")),
+		"category": str(_get(item, "type", default="")).lower(),
+		"rtp": float(_get(item, "returnToPlayer", "return_to_player", default=0.0)),
+		"volatility": str(_get(item, "variance", default="")).lower(),
+		"enabled": bool(_get(item, "active", default=False)),
+		"releasedAt": normalize_date_iso(str(_get(item, "launchDate", "launch_date", default=""))),
 		"tags": [str(tag) for tag in tags],
-		"thumbnailUrl": str(item.get("thumbnail", "")),
+		"thumbnailUrl": str(_get(item, "thumbnail", default="")),
 	}
 
 
 def normalize_beta(item: dict[str, Any]) -> dict[str, Any]:
-	category_code = str(item.get("gameCategory", "")).upper()
-	raw_tags = str(item.get("tagList", "")).strip()
+	category_code = str(_get(item, "gameCategory", "game_category", default="")).upper()
+	risk_level = str(_get(item, "riskLevel", "risk_level", default="")).upper()
+	raw_tags = str(_get(item, "tagList", "tag_list", default="")).strip()
 	tags = [tag.strip() for tag in raw_tags.split(",") if tag.strip()] if raw_tags else []
 
 	return {
-		"id": str(item.get("gameCode", "")),
-		"name": str(item.get("gameName", "")),
-		"provider": str(item.get("providerName", "")),
+		"id": str(_get(item, "gameCode", "game_code", default="")),
+		"name": str(_get(item, "gameName", "game_name", default="")),
+		"provider": str(_get(item, "providerName", "provider_name", default="")),
 		"category": CATEGORY_MAP_BETA.get(category_code, category_code.lower()),
-		"rtp": float(item.get("rtpValue", 0.0)),
-		"volatility": str(item.get("riskLevel", "")).lower(),
-		"enabled": int(item.get("isEnabled", 0)) == 1,
-		"releasedAt": str(item.get("releaseDate", "")),
+		"rtp": float(_get(item, "rtpValue", "rtp_value", default=0.0)),
+		"volatility": VOLATILITY_MAP_BETA.get(risk_level, risk_level.lower()),
+		"enabled": int(_get(item, "isEnabled", "is_enabled", default=0)) == 1,
+		"releasedAt": normalize_date_ddmmyyyy(str(_get(item, "releaseDate", "release_date", default=""))),
 		"tags": tags,
-		"thumbnailUrl": str(item.get("imageUrl", "")),
+		"thumbnailUrl": str(_get(item, "imageUrl", "image_url", default="")),
 	}
 
 
@@ -81,15 +117,15 @@ def normalize_gamma(item: dict[str, Any]) -> dict[str, Any]:
 
 	return {
 		"id": str(data.get("id", "")),
-		"name": str(attrs.get("displayName", "")),
+		"name": str(_get(attrs, "displayName", "display_name", default="")),
 		"provider": str(provider.get("label", "")),
 		"category": str(classification.get("category", "")).lower(),
 		"rtp": float(metrics.get("rtp", 0.0)) * 100.0,
 		"volatility": str(classification.get("volatility", "")).lower(),
 		"enabled": bool(status.get("enabled", False)),
-		"releasedAt": str(status.get("released", "")),
+		"releasedAt": normalize_date_iso(str(status.get("released", ""))),
 		"tags": tags,
-		"thumbnailUrl": str(media.get("thumbnailUrl", "")),
+		"thumbnailUrl": str(_get(media, "thumbnailUrl", "thumbnail_url", default="")),
 	}
 
 
