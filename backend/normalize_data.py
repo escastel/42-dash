@@ -25,26 +25,39 @@ def parse_bool(value: str | None, default: bool = True) -> bool:
 
 
 def normalize_alpha(item: dict[str, Any]) -> dict[str, Any]:
+	tags = item.get("features", [])
+	if not isinstance(tags, list):
+		tags = []
+
 	return {
 		"id": str(item.get("gameId", "")),
 		"name": str(item.get("title", "")),
 		"provider": str(item.get("studio", "")),
 		"category": str(item.get("type", "")).lower(),
 		"rtp": float(item.get("returnToPlayer", 0.0)),
+		"volatility": str(item.get("variance", "")).lower(),
 		"enabled": bool(item.get("active", False)),
+		"releasedAt": str(item.get("launchDate", "")),
+		"tags": [str(tag) for tag in tags],
 		"thumbnailUrl": str(item.get("thumbnail", "")),
 	}
 
 
 def normalize_beta(item: dict[str, Any]) -> dict[str, Any]:
 	category_code = str(item.get("gameCategory", "")).upper()
+	raw_tags = str(item.get("tagList", "")).strip()
+	tags = [tag.strip() for tag in raw_tags.split(",") if tag.strip()] if raw_tags else []
+
 	return {
 		"id": str(item.get("gameCode", "")),
 		"name": str(item.get("gameName", "")),
 		"provider": str(item.get("providerName", "")),
 		"category": CATEGORY_MAP_BETA.get(category_code, category_code.lower()),
 		"rtp": float(item.get("rtpValue", 0.0)),
+		"volatility": str(item.get("riskLevel", "")).lower(),
 		"enabled": int(item.get("isEnabled", 0)) == 1,
+		"releasedAt": str(item.get("releaseDate", "")),
+		"tags": tags,
 		"thumbnailUrl": str(item.get("imageUrl", "")),
 	}
 
@@ -57,6 +70,14 @@ def normalize_gamma(item: dict[str, Any]) -> dict[str, Any]:
 	metrics = attrs.get("metrics", {})
 	status = attrs.get("status", {})
 	media = attrs.get("media", {})
+	raw_tags = attrs.get("tags", [])
+	tags: list[str] = []
+	if isinstance(raw_tags, list):
+		for tag in raw_tags:
+			if isinstance(tag, dict):
+				slug = tag.get("slug")
+				if slug:
+					tags.append(str(slug))
 
 	return {
 		"id": str(data.get("id", "")),
@@ -64,7 +85,10 @@ def normalize_gamma(item: dict[str, Any]) -> dict[str, Any]:
 		"provider": str(provider.get("label", "")),
 		"category": str(classification.get("category", "")).lower(),
 		"rtp": float(metrics.get("rtp", 0.0)) * 100.0,
+		"volatility": str(classification.get("volatility", "")).lower(),
 		"enabled": bool(status.get("enabled", False)),
+		"releasedAt": str(status.get("released", "")),
+		"tags": tags,
 		"thumbnailUrl": str(media.get("thumbnailUrl", "")),
 	}
 

@@ -5,6 +5,7 @@ from typing import Any
 
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from normalize_data import find_game_by_id, normalize_all_games, query_games
 
@@ -96,16 +97,20 @@ def create_app() -> FastAPI:
             page_size=pageSize,
         )
 
-    @app.get("/api/games/{game_id}")
-    def get_game(game_id: str) -> dict[str, Any]:
+    @app.get("/api/games/{game_id}", response_model=None)
+    def get_game(game_id: str) -> dict[str, Any] | JSONResponse:
         game = find_game_by_id(app.state.games, game_id)
         if game is not None:
             return game
 
-        return {
-            "id": game_id,
-            "message": "pending implementation",
-        }
+        return JSONResponse(
+            status_code=404,
+            content={
+                "code": "NOT_FOUND",
+                "message": f"Game with id '{game_id}' was not found",
+                "details": [],
+            },
+        )
 
     @app.post("/api/launch")
     def launch_game(payload: dict[str, Any]) -> dict[str, Any]:
