@@ -3,6 +3,7 @@ import json
 import hashlib
 import hmac
 import uuid
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
 from pathlib import Path
@@ -13,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from normalize_data import find_game_by_id, normalize_all_games, query_games
+from wallet_service import WalletError, WalletService
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -85,6 +87,9 @@ def create_app() -> FastAPI:
     app.state.launch_secret = os.getenv("LAUNCH_SECRET", "default-secret-change-me")
     app.state.launch_ttl_minutes = int(os.getenv("LAUNCH_TTL_MINUTES", "30"))
     app.state.launch_sessions = {}
+    app.state.wallet = WalletService(
+        initial_balance=Decimal(os.getenv("INITIAL_BALANCE", "10000"))
+    )
 
     @app.on_event("startup")
     def load_provider_files() -> None:
@@ -219,13 +224,92 @@ def create_app() -> FastAPI:
             "expiresAt": expires_at_iso,
         }
 
-    app.state.wallet_balance = float(os.getenv("INITIAL_BALANCE", "10000"))
+    def parse_decimal_amount(value: Any) -> Decimal:
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise WalletError(
+                status_code=400,
+                code="INVALID_AMOUNT",
+                message="amount must be a valid number",
+                details=[],
+            )
+
+    def parse_transaction_id(payload: dict[str, Any]) -> str:
+        tx_id = str(payload.get("transactionId", "")).strip()
+        if not tx_id:
+            raise WalletError(
+                status_code=400,
+                code="BAD_REQUEST",
+                message="Missing required field: transactionId",
+                details=[],
+            )
+        return tx_id
+
+    def parse_bet_transaction_id(payload: dict[str, Any]) -> str:
+        bet_tx_id = str(payload.get("betTransactionId", "")).strip()
+        if not bet_tx_id:
+            raise WalletError(
+                status_code=400,
+                code="BAD_REQUEST",
+                message="Missing required field: betTransactionId",
+                details=[],
+            )
+        return bet_tx_id
 
     @app.get("/api/wallet/balance")
     def get_wallet_balance() -> dict[str, float]:
-        return {
-            "balance": round(float(app.state.wallet_balance), 2),
-        }
+        return {"balance": float(app.state.wallet.get_balance())}
+
+    @app.post("/api/bet", response_model=None)
+    def place_bet(payload: dict[str, Any]) -> dict[str, Any] | JSONResponse:
+        try:
+            tx_id = parse_transaction_id(payload)
+            amount = parse_decimal_amount(payload.get("amount"))
+            return app.state.wallet.bet(transaction_id=tx_id, amount=amount)
+        except WalletError as err:
+            return error_response(
+                status_code=err.status_code,
+                code=err.code,
+                message=err.message,
+                details=err.details,
+            )
+
+    @app.post("/api/settle", response_model=None)
+    def settle_bet(payload: dict[str, Any]) -> dict[str, Any] | JSONResponse:
+        try:
+            tx_id = parse_transaction_id(payload)
+            bet_tx_id = parse_bet_transaction_id(payload)
+            amount = parse_decimal_amount(payload.get("amount"))
+            return app.state.wallet.settle(
+                transaction_id=tx_id,
+                bet_transaction_id=bet_tx_id,
+                amount=amount,
+            )
+        except WalletError as err:
+            return error_response(
+                status_code=err.status_code,
+                code=err.code,
+                message=err.message,
+                details=err.details,
+            )
+
+    @app.post("/api/rollback", response_model=None)
+    def rollback_bet(payload: dict[str, Any]) -> dict[str, Any] | JSONResponse:
+        try:
+            tx_id = parse_transaction_id(payload)
+            bet_tx_id = parse_bet_transaction_id(payload)
+            return app.state.wallet.rollback(
+                transaction_id=tx_id,
+                bet_transaction_id=bet_tx_id,
+            )
+        except WalletError as err:
+            return error_response(
+                status_code=err.status_code,
+                code=err.code,
+                message=err.message,
+                details=err.details,
+            )
 
     return app
 
